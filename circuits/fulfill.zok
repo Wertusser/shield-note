@@ -1,0 +1,37 @@
+import "utils/pack/bool/nonStrictUnpack256" as unpack256;
+import "hashes/poseidon/poseidon";
+import "ecc/edwardsScalarMult" as multiply;
+from "ecc/babyjubjubParams" import BABYJUBJUB_PARAMS;
+
+def preimage_eq(field input, field expected_hash) -> bool {
+    field hash = poseidon([input]);
+    return hash == expected_hash;
+}
+
+def key_eq(field sk, field[2] pk) -> bool {
+    field[2] G = [BABYJUBJUB_PARAMS.Gu, BABYJUBJUB_PARAMS.Gv];
+
+    bool[256] skBits = unpack256(sk);
+    field[2] ptExp = multiply(skBits, G, BABYJUBJUB_PARAMS);
+
+    bool out = ptExp[0] == pk[0] && ptExp[1] == pk[1];
+    return out;
+}
+
+def elgamal_encrypt(field input, field sk_sender, field[2] pk_receiver) -> field[2] {
+    field[2] G = [BABYJUBJUB_PARAMS.Gu, BABYJUBJUB_PARAMS.Gv];
+
+    bool[256] skBits = unpack256(sk_sender);
+    bool[256] inputBits = unpack256(input);
+
+    field[2] shared_sk = multiply(skBits, pk_receiver, BABYJUBJUB_PARAMS);
+
+    return multiply(inputBits, shared_sk, BABYJUBJUB_PARAMS);
+}
+
+def main(private field input, private field sk_prover, field[2] pk_prover, field[2] pk_sender, field preimage) -> field[2] {
+    assert(preimage_eq(input, preimage));
+    assert(key_eq(sk_prover, pk_prover));
+    
+    return elgamal_encrypt(input, sk_prover, pk_sender);
+}

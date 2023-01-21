@@ -9,3 +9,9 @@ out/
 
 # Dotenv file
 .env
+out
+out.r1cs
+abi.json
+verifier.sol
+proving.key
+verification.key
