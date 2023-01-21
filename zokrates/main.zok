@@ -1,0 +1,39 @@
+import "utils/pack/bool/nonStrictUnpack256" as unpack256;
+import "hashes/mimcSponge/mimcSponge";
+import "ecc/edwardsScalarMult" as multiply;
+from "ecc/babyjubjubParams" import BABYJUBJUB_PARAMS;
+
+def preimage_eq(field input, field expected_hash) -> bool {
+    field[1] hash = mimcSponge([input], 1024);
+    return hash[0] == expected_hash;
+}
+
+def key_eq(field sk, field[2] pk) -> bool {
+    field[2] G = [BABYJUBJUB_PARAMS.Gu, BABYJUBJUB_PARAMS.Gv];
+
+    bool[256] skBits = unpack256(sk);
+    field[2] ptExp = multiply(skBits, G, BABYJUBJUB_PARAMS);
+
+    bool out = ptExp[0] == pk[0] && ptExp[1] == pk[1];
+    return out;
+}
+
+def elgamal_encrypt(field input, field sk_sender, field[2] pk_receiver) -> field[2][2] {
+    field[2] G = [BABYJUBJUB_PARAMS.Gu, BABYJUBJUB_PARAMS.Gv];
+
+    bool[256] inputBits = unpack256(input);
+    bool[256] skBits = unpack256(sk_sender);
+
+    field[2] shared_sk = multiply(skBits, pk_receiver, BABYJUBJUB_PARAMS);
+
+    field[2] c_1 =  multiply(skBits, G, BABYJUBJUB_PARAMS);
+    field[2] c_2 =  multiply(inputBits, shared_sk, BABYJUBJUB_PARAMS);
+    return [c_1, c_2];
+}
+
+def main(private field input, private field sk_sender, field[2] pk_sender, field[2] pk_receiver, field expected_hash) -> field[2][2] {
+    assert(preimage_eq(input, expected_hash));
+    assert(key_eq(sk_sender, pk_sender));
+    
+    return elgamal_encrypt(input, sk_sender, pk_receiver);
+}
