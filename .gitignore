@@ -11,7 +11,12 @@ out/
 .env
 out
 out.r1cs
+out.wtns
+proof.json
+witness
 abi.json
 verifier.sol
 proving.key
 verification.key
+node_modules/
+dist

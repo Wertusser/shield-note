@@ -3,7 +3,8 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import {NoteMarket} from "../src/NoteMarket.sol";
-import {Pairing, Verifier} from "../src/Verifier.sol";
+import {Pairing, Verifier} from "../src/FullfillVerifier.sol";
+import {Pairing, Verifier } from "../src/RedeemVerifier.sol";
 
 
 // prover_sk 2061898512262334998049153476770149213675078907792940038676731350170041123939
@@ -56,6 +57,27 @@ contract NoteMarketTest is Test {
     function testRequestAndClose(address sender) public {
         vm.prank(sender);
         market.request(preimage, senderKey);
+        /*
+            "a": [
+      "0x081af38a997a0aebfc6fd31926a6d739b57c53e05c542e640499486e2a2afb6e",
+      "0x0c89151a6f8aaa17785af70d22e54026d887da64d5cdaca178748c81d2e05a6f"
+    ],
+    "b": [
+      [
+        "0x013d371ba21c6bb24378e04e6a57bfb3245bfc896fde67bd215a74f3a1e69422",
+        "0x06e27aa1c4dc8348a09305039c07f45175c86b35be76a4215a76b03a777700a0"
+      ],
+      [
+        "0x1aeac9db84a16d549c443a3e1090fda86cd55c829aebe1205c2b9ce3fff961cb",
+        "0x2da3e9493cec62432ce06e994b6876e08fcbb188425a3edadf5ba65324f32756"
+      ]
+    ],
+    "c": [
+      "0x1cfd690546e1a6f4dcd9cb5d9f76194a6465f62811b01c5098c1597d54a879bc",
+      "0x12350c9f4137ac9419a6fe7a745c9db80b392b31dbfb0f63270bcd46141dd69f"
+    ]
+        */
+
         market.close(preimage);
         uint8 status = market.getStatus(sender, preimage);
         console2.log(status);

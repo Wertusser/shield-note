@@ -1,97 +1,127 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Verifier} from "./Verifier.sol";
+import {Verifier as FulfillVerifier} from "./FulfillVerifier.sol";
+import {Verifier as RedeemVerifier} from "./RedeemVerifier.sol";
 
-contract NoteMarket is Verifier {
+contract NoteMarket {
     uint8 constant NOT_EXIST = 0;
     uint8 constant IN_PROGRESS = 1;
     uint8 constant COMPLETED = 3;
 
-    struct RequestData {
+    struct Order {
         uint8 status;
-        uint256 amountPaid;
+        uint256 price;
         uint256[2] senderKey;
         uint256[2] proverKey;
         uint256[2] response;
     }
 
-    event Request(address sender, uint256 preimage, uint256[2] senderKey);
-    event Close(address sender, uint256 preimage);
-    event Fulfill(
+    FulfillVerifier public fulfillVerifier;
+    RedeemVerifier public redeemVerifier;
+
+    mapping(uint256 => Order) public orders;
+
+    event RequestOrder(
         address sender,
+        uint256 preimage,
+        uint256 price,
+        uint256[2] senderKey
+    );
+
+    event CloseOrder(address sender, uint256 preimage);
+
+    event FulfillOrder(
         address prover,
+        address sender,
         uint256 preimage,
         uint256[2] proverKey,
         uint256[2] response
     );
 
-    mapping(address => mapping(uint256 => RequestData)) public requests;
-
-    function getStatus(address sender, uint256 preimage)
-        public
-        view
-        returns (uint8 status)
-    {
-        status = requests[sender][preimage].status;
+    constructor(
+        FulfillVerifier fulfillVerifier_,
+        RedeemVerifier redeemVerifier_
+    ) {
+        fulfillVerifier = fulfillVerifier_;
+        redeemVerifier = redeemVerifier_;
     }
 
-    function getResult(address sender, uint256 preimage)
+    function getStatus(uint256 preimage) public view returns (uint8 status) {
+        status = orders[preimage].status;
+    }
+
+    function getResult(uint256 preimage)
         public
         view
         returns (uint256[2][2] memory response)
     {
-        response[0] = requests[sender][preimage].proverKey;
-        response[1] = requests[sender][preimage].response;
+        // returns a prover key and encrypted response
+        // prover key is used to decrypt responce and extract witness
+        response[0] = orders[preimage].proverKey;
+        response[1] = orders[preimage].response;
     }
 
-    function setFee(uint256 newNumber) external {}
+    function setFee(uint256 newNumber) public {}
 
-    function request(uint256 preimage, uint256[2] calldata senderKey)
-        external
+    function requestOrder(uint256 preimage, uint256[2] calldata senderKey)
+        public
         payable
     {
-        RequestData storage req = requests[msg.sender][preimage];
+        Order storage order = orders[preimage];
         require(
-            req.status == NOT_EXIST,
+            order.status == NOT_EXIST,
             "request is already exists, check requests(address, uint256)"
         );
 
-        req.status = IN_PROGRESS;
-        req.senderKey = senderKey;
-        req.amountPaid = msg.value;
+        // Set order to a "In Progress" status
+        // address who knows a senderKey's private key can redeem his eth from a order
+        order.status = IN_PROGRESS;
+        order.senderKey = senderKey;
+        order.price = msg.value;
 
-        emit Request(msg.sender, preimage, senderKey);
+        emit RequestOrder(msg.sender, preimage, msg.value, senderKey);
     }
 
-    function close(uint256 preimage) external {
-        RequestData storage req = requests[msg.sender][preimage];
+    function redeemOrder(RedeemVerifier.Proof calldata proof, uint256 preimage)
+        public
+    {
+        Order storage order = orders[preimage];
         require(
-            req.status == IN_PROGRESS,
+            order.status == IN_PROGRESS,
             "request is already processed or not exists, check requests(address, uint256)"
         );
 
-        req.status = NOT_EXIST;
-        req.senderKey = [0, 0];
-        req.amountPaid = 0;
+        // Verify that redem proof is valid, which means that msg.sender have "senderKey" identity
+        require(
+            redeemVerifier.verifyTx(proof, orders[preimage].senderKey),
+            "Redeem proof is not valid"
+        );
+        uint256 price = order.price;
 
-        transferReward(msg.sender, req.amountPaid);
-        emit Close(msg.sender, preimage);
+        // Set order to "Not exist" status
+        order.status = NOT_EXIST;
+        order.senderKey = [0, 0];
+        order.price = 0;
+
+        // redeem eth from contract to sender, who suppose to be senderKey
+        _transferReward(msg.sender, price);
+        emit CloseOrder(msg.sender, preimage);
     }
 
-    function fulfill(
-        Proof calldata proof,
+    function fulfillOrder(
+        FulfillVerifier.Proof calldata proof,
         uint256 preimage,
         address sender,
         uint256[2] calldata proverKey,
         uint256[2] calldata output
-    ) external {
-        RequestData storage req = requests[sender][preimage];
+    ) public {
+        Order storage order = orders[preimage];
         require(
-            req.status == IN_PROGRESS,
+            order.status == IN_PROGRESS,
             "request not in progress, check requests(address, uint256)"
         );
-        uint256[2] memory senderKey = req.senderKey;
+        uint256[2] memory senderKey = order.senderKey;
         uint256[7] memory payload = [
             proverKey[0],
             proverKey[1],
@@ -101,21 +131,30 @@ contract NoteMarket is Verifier {
             output[0],
             output[1]
         ];
-        require(verifyTx(proof, payload), "Proof is not valid");
+        // Verify that output is encrypted response with witness who have valid preimage
+        // responce is encrypted by prover using ElGamal encryption
+        require(
+            fulfillVerifier.verifyTx(proof, payload),
+            "Fulfill proof is not valid"
+        );
 
-        req.status = COMPLETED;
-        req.proverKey = proverKey;
-        req.response = output;
+        // Set order to "Complete" status
+        // Address who knows identity of senderKey can no longer redeem price from orders
+        order.status = COMPLETED;
+        order.proverKey = proverKey;
+        order.response = output;
 
-        transferReward(msg.sender, req.amountPaid);
+        // redeem eth from contract to prover, who provide witness
+        _transferReward(msg.sender, order.price);
 
-        emit Fulfill(sender, msg.sender, preimage, proverKey, output);
+        emit FulfillOrder(msg.sender, sender, preimage, proverKey, output);
     }
 
-    function transferReward(address recepient, uint256 amount) internal {
+    function _transferReward(address recepient, uint256 amount) internal {
         uint256 currentBalance = address(this).balance;
         uint256 amountPaid = currentBalance < amount ? currentBalance : amount;
-
-        payable(recepient).transfer(amountPaid);
+        if (amountPaid > 0) {
+            payable(recepient).transfer(amountPaid);
+        }
     }
 }
