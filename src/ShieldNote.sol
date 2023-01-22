@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Verifier as FulfillVerifier} from "./FulfillVerifier.sol";
-import {Verifier as RedeemVerifier} from "./RedeemVerifier.sol";
+import {Verifier as FulfillVerifier} from "./verifiers/fulfill.sol";
+import {Verifier as RedeemVerifier} from "./verifiers/redeem.sol";
 
-contract NoteMarket {
+contract ShieldNote {
     uint8 constant NOT_EXIST = 0;
     uint8 constant IN_PROGRESS = 1;
     uint8 constant COMPLETED = 3;
@@ -29,7 +29,7 @@ contract NoteMarket {
         uint256[2] senderKey
     );
 
-    event CloseOrder(address sender, uint256 preimage);
+    event RedeemOrder(address sender, uint256 preimage);
 
     event FulfillOrder(
         address prover,
@@ -106,7 +106,8 @@ contract NoteMarket {
 
         // redeem eth from contract to sender, who suppose to be senderKey
         _transferReward(msg.sender, price);
-        emit CloseOrder(msg.sender, preimage);
+        
+        emit RedeemOrder(msg.sender, preimage);
     }
 
     function fulfillOrder(
